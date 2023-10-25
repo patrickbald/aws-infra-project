@@ -1,11 +1,13 @@
 import { Client } from '@temporalio/client';
-import { loopingWorkflow } from './workflows';
+import { infraSetup, addInstance } from './workflows';
 
 async function run() {
   const client = new Client();
 
-  const result = await client.workflow.execute(loopingWorkflow, { taskQueue: 'continue-as-new', workflowId: 'loop-0' });
-  console.log(result); // Hello, Temporal!
+  const setupResult = await client.workflow.execute(infraSetup, { taskQueue: 'aws-infra', workflowId: '' });
+
+  
+  
 }
 
 run().catch((err) => {
