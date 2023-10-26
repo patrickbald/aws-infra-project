@@ -20,6 +20,7 @@
     ]
   },
   "dependencies": {
+    "@aws-sdk/client-ec2": "^3.436.0",
     "@temporalio/activity": "^1.8.4",
     "@temporalio/client": "^1.8.4",
     "@temporalio/worker": "^1.8.4",
