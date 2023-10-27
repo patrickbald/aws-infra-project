@@ -7,8 +7,8 @@ const {
   createInstance
 } = proxyActivities<typeof activities>({
   retry: {
-    initialInterval: '50 milliseconds',
-    maximumAttempts: 2,
+    initialInterval: '1 second',
+    maximumAttempts: 3,
   },
   startToCloseTimeout: '30 seconds'
 });
