@@ -1,18 +1,22 @@
 import { ApplicationFailure, proxyActivities, uuid4 } from "@temporalio/workflow";
 import type * as activities from './activities';
-import { createSubnet } from "./activities";
+import { env } from "process";
 
 const {
   createVPC,
   createSecurityGroup,
   createLoadBalancer,
+  createListener, 
+  createSubnet,
+  createTargetGroup,
   createInstance
 } = proxyActivities<typeof activities>({
   retry: {
     initialInterval: '1 second',
+    backoffCoefficient: 2,
     maximumAttempts: 3,
   },
-  startToCloseTimeout: '30 seconds'
+  startToCloseTimeout: '1 minute'
 });
 
 type EnvArgs = {
@@ -20,7 +24,7 @@ type EnvArgs = {
   env: string
 }
 
-// Workflows
+// Workflow
 export async function initiateEnvironment(args: EnvArgs): Promise<string> {
 
   if (!args.env || !args.sgName){
@@ -28,26 +32,33 @@ export async function initiateEnvironment(args: EnvArgs): Promise<string> {
   }
 
   // Business Logic
+  console.log(`Initiating environment: ${env}`)
+
   const vpcId = await createVPC();
-  if (vpcId == ''){
-    const message = `Failed to set up VPC for ${args.env}`;
-    throw ApplicationFailure.create({ message });
-  }
 
   const securityGroupId = await createSecurityGroup(args.env, args.sgName, vpcId);
-  if (securityGroupId == ''){
-    const message = `Failed to create security group for ${args.env}`;
-    throw ApplicationFailure.create({ message });
-  }
 
-  const cidrBlocks: Array<string> = [];
-  let subnetIds = [];
+  const cidrBlocks:Array<string> = ['']; // TODO determine cidr blocks
+  let subnetIds:Array<string> = [];
   for (let cidr of cidrBlocks){
     subnetIds.push(await createSubnet(vpcId, cidr));
   }
 
+  const loadBalancerArn = await createLoadBalancer(securityGroupId, subnetIds);
+  if (loadBalancerArn == ''){
+    const message = 'No Load Balancer Dns';
+    throw ApplicationFailure.create({ message });
+  }
 
-  const loadBalanccerArn = await createLoadBalancer(securityGroupId, subnetIds);
+  const targetGroupArn = await createTargetGroup(vpcId);
+  if (targetGroupArn === ''){
+    const message = 'No Target Group Arn';
+    throw ApplicationFailure.create({ message })
+  }
+
+  await createListener(loadBalancerArn, targetGroupArn);
+
+  console.log('Environment setup complete.')
 
   return vpcId;
 };

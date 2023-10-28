@@ -5,7 +5,10 @@ import {
     CreateSubnetCommand, 
 } from "@aws-sdk/client-ec2";
 import {
-    CreateLoadBalancerCommand, CreateLoadBalancerCommandOutput, LoadBalancerSchemeEnum, Tag
+    Action,
+    ActionTypeEnum,
+    CreateListenerCommand,
+    CreateLoadBalancerCommand, CreateLoadBalancerCommandOutput, CreateTargetGroupCommand, ElasticLoadBalancingV2Client, LoadBalancerSchemeEnum, ProtocolEnum, Tag
 } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { fromEnv } from "@aws-sdk/credential-providers";
 import { ApplicationFailure } from "@temporalio/workflow";
@@ -37,8 +40,7 @@ export async function createVPC(): Promise<string> {
         return Vpc.VpcId;
     } catch (err) {
         const message = `Error creating VPC: ${err}`;
-        console.error(message)
-        throw Error(message);
+        throw ApplicationFailure.create({ message });
     }
 };
 
@@ -72,8 +74,7 @@ export async function createSecurityGroup(name: string, env: string, vpcId: stri
         return GroupId;
     } catch (err) {
         const message = `Error creating security group: ${err}`;
-        console.error(message);
-        throw Error(message);
+        throw ApplicationFailure.create({ message });
     }
 };
 
@@ -89,7 +90,7 @@ export async function createSubnet(vpcId: string, cidrBlock: string): Promise<st
     });
     
     const subnetParams: SubnetInput = {
-        CidrBlock: "",
+        CidrBlock: cidrBlock,
         VpcId: vpcId
     };
     const command = new CreateSubnetCommand(subnetParams);
@@ -102,8 +103,7 @@ export async function createSubnet(vpcId: string, cidrBlock: string): Promise<st
         return Subnet.SubnetId;
     } catch (err) {
         const message = `Error creating subnet: ${err}`;
-        console.error(message);
-        throw Error(message);
+        throw ApplicationFailure.create({ message });
     }
 };
 
@@ -116,7 +116,7 @@ type LoadBalancerInput = {
 
 export async function createLoadBalancer(sgGroupId: string, subnetIds: Array<string>): Promise<string> {
 
-    const client = new EC2Client({
+    const client = new ElasticLoadBalancingV2Client({
         region: 'us-west-2',
         credentials: fromEnv()
     });
@@ -134,13 +134,82 @@ export async function createLoadBalancer(sgGroupId: string, subnetIds: Array<str
         if (res.LoadBalancers){
             return res.LoadBalancers[0].LoadBalancerArn ?? ''
         } else {
-            throw Error('No Load Balancer Arn');
+            throw Error('No Load Balancer in Response');
         }
     } catch (err) {
         const message = `Error creating load balancer: ${err}`
         throw ApplicationFailure.create({ message });
     }
 };
+
+type TargetGroupInput = {
+    Name: string;
+    Protocol: ProtocolEnum;
+    Port: number;
+    VpcId: string;
+}
+
+export async function createTargetGroup(vpcId: string): Promise<string> {
+    const client = new ElasticLoadBalancingV2Client({
+        region: 'us-west-2',
+        credentials: fromEnv()
+    });
+    
+    const targetGroupParams: TargetGroupInput = {
+        Name: 'pb-temporal-target-group',
+        Protocol: 'HTTP',
+        Port: 80,
+        VpcId: vpcId
+    };
+    const command = new CreateTargetGroupCommand(targetGroupParams);
+
+    try {
+        const targetGroupResponse = await client.send(command);
+        if (targetGroupResponse.TargetGroups){
+            return targetGroupResponse.TargetGroups[0].TargetGroupArn ?? ''
+        } else {
+            throw Error('No Target Group in Response.')
+        }
+    } catch (err) {
+        const message = `Error creating target group: ${err}`
+        throw ApplicationFailure.create({ message }); 
+    }
+};
+
+type ListenerInput = {
+    LoadBalancerArn: string;
+    Port: number;
+    Protocol: ProtocolEnum;
+    DefaultActions: Array<Action>;
+}
+
+export async function createListener(loadBalancerArn: string, targetGroupArn: string): Promise<void>{
+    const client = new ElasticLoadBalancingV2Client({
+        region: 'us-west-2',
+        credentials: fromEnv()
+    });
+
+    const listenerParams:ListenerInput = {
+        LoadBalancerArn: loadBalancerArn,
+        Port: 80,
+        Protocol: 'HTTP',
+        DefaultActions: [
+            {
+                Type: 'forward',
+                TargetGroupArn: targetGroupArn
+            }
+        ]
+    };
+    const command = new CreateListenerCommand(listenerParams);
+
+    try {
+        const listenersResponse = await client.send(command);
+    } catch (err) {
+        const message = `Error creating listener. ${err}`;
+        throw ApplicationFailure.create({ message })
+    }
+
+}
 
 // create instance activity
 export async function createInstance(name: string): Promise<string> {
