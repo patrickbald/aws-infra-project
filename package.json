@@ -8,8 +8,8 @@
     "lint": "eslint .",
     "start": "ts-node src/worker.ts",
     "start.watch": "nodemon src/worker.ts",
-    "setup-workflow": "ts-node src/client.ts",
-    "status-workflow": "ts-node src/get-status-workflow.ts"
+    "initiate-env": "ts-node src/environment.ts",
+    "add-instance-workflow": "ts-node src/instance.ts"
   },
   "nodemonConfig": {
     "execMap": {
@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.436.0",
+    "@aws-sdk/client-elastic-load-balancing-v2": "^3.438.0",
     "@aws-sdk/credential-providers": "^3.437.0",
     "@temporalio/activity": "^1.8.4",
     "@temporalio/client": "^1.8.4",
