@@ -203,7 +203,7 @@ export async function createListener(loadBalancerArn: string, targetGroupArn: st
     const command = new CreateListenerCommand(listenerParams);
 
     try {
-        const listenersResponse = await client.send(command);
+        await client.send(command);
     } catch (err) {
         const message = `Error creating listener. ${err}`;
         throw ApplicationFailure.create({ message })

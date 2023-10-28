@@ -38,7 +38,7 @@ export async function initiateEnvironment(args: EnvArgs): Promise<string> {
 
   const securityGroupId = await createSecurityGroup(args.env, args.sgName, vpcId);
 
-  const cidrBlocks:Array<string> = ['']; // TODO determine cidr blocks
+  const cidrBlocks:Array<string> = ['172.1.32.0/16',  '172.1.64.0/16'];
   let subnetIds:Array<string> = [];
   for (let cidr of cidrBlocks){
     subnetIds.push(await createSubnet(vpcId, cidr));
