@@ -1,6 +1,6 @@
-import { ApplicationFailure, proxyActivities, uuid4 } from "@temporalio/workflow";
+import { ApplicationFailure, proxyActivities, sleep, uuid4 } from "@temporalio/workflow";
 import type * as activities from './activities';
-import { env } from "process";
+import { EC2Client } from "@aws-sdk/client-ec2";
 
 const {
   createVPC,
@@ -9,7 +9,12 @@ const {
   createListener, 
   createSubnet,
   createTargetGroup,
-  createInstance
+  createGateway,
+  createInstance,
+  registerInstance,
+  createRouteTable,
+  addRoute,
+  associateRouteTable
 } = proxyActivities<typeof activities>({
   retry: {
     initialInterval: '1 second',
@@ -24,29 +29,58 @@ type EnvArgs = {
   env: string
 }
 
+type EnvOutput = {
+  VpcId: string;
+  LoadBalancerArn: string;
+  SecurityGroup: string;
+  SubnetIds: Array<string>;
+  TargetGroupArn: string;
+}
+
 // Workflow
-export async function initiateEnvironment(args: EnvArgs): Promise<string> {
+export async function initiateEnvironment(args: EnvArgs): Promise<EnvOutput> {
 
   if (!args.env || !args.sgName){
     throw ApplicationFailure.create({ message: `VPC workflows missing parameters.`});
   }
 
   // Business Logic
-  console.log(`Initiating environment: ${env}`)
+  console.log(`Initiating environment: ${args.env}`)
 
   const vpcId = await createVPC();
 
-  const securityGroupId = await createSecurityGroup(args.env, args.sgName, vpcId);
+  type SubnetAZ = {
+      Subnet: string;
+      Az: string;
+      Tag: string;
+  };
 
-  const cidrBlocks:Array<string> = ['172.1.32.0/16',  '172.1.64.0/16'];
+  const cidrBlocks:Array<SubnetAZ> = [
+    {Subnet: '172.1.0.0/20', Az: 'us-west-2a', Tag: 'us-west-2a-public'}, 
+    {Subnet: '172.1.16.0/20', Az: 'us-west-2b', Tag: 'us-west-2b-public'}, 
+    {Subnet: '172.1.128.0/20', Az: 'us-west-2a', Tag: 'us-west-2a-private'},
+    {Subnet: '172.1.144.0/20', Az: 'us-west-2b', Tag: 'us-west-2b-private'}
+  ];
   let subnetIds:Array<string> = [];
-  for (let cidr of cidrBlocks){
-    subnetIds.push(await createSubnet(vpcId, cidr));
+  for (let subnet of cidrBlocks){
+    subnetIds.push(await createSubnet(vpcId, subnet.Subnet, subnet.Az, subnet.Tag));
   }
 
-  const loadBalancerArn = await createLoadBalancer(securityGroupId, subnetIds);
+  const gatewayId = await createGateway(vpcId);
+
+  const routeTableId = await createRouteTable(vpcId);
+  await addRoute(routeTableId, gatewayId);
+
+  for (let subnet of subnetIds){
+    await associateRouteTable(routeTableId, subnet);
+  }
+
+  const sgName = `pb-temporal-1`;
+  const securityGroupId = await createSecurityGroup(args.env, sgName, vpcId);
+
+  const loadBalancerArn = await createLoadBalancer(securityGroupId, subnetIds.slice(0, 2));
   if (loadBalancerArn == ''){
-    const message = 'No Load Balancer Dns';
+    const message = 'No Load Balancer Arn';
     throw ApplicationFailure.create({ message });
   }
 
@@ -60,23 +94,32 @@ export async function initiateEnvironment(args: EnvArgs): Promise<string> {
 
   console.log('Environment setup complete.')
 
-  return vpcId;
+  return {
+    VpcId: vpcId,
+    LoadBalancerArn: loadBalancerArn,
+    SecurityGroup: securityGroupId,
+    SubnetIds: subnetIds,
+    TargetGroupArn: targetGroupArn
+  }
 };
 
 type InstanceArgs = {
-  name: string
+  SecurityGroupId: string;
+  SubnetId: string
+  TargetGroupArn: string;
 };
 
 // Workflow to add an instance to infrastructure
 export async function addInstance(args: InstanceArgs): Promise<string> {
+
+  const instanceId = await createInstance(args.SecurityGroupId, args.SubnetId);
+  console.log(`Instance ID: ${instanceId}`);
+
+  await sleep('1 minute');
+
+  await registerInstance(instanceId, args.TargetGroupArn);
   
   return `Instance: successfully created.`;
 };
-
-// Workflow to remove instance from environment
-export async function removeInstance(): Promise<string> {
-
-  return 'Instance successfully removed.';
-}
 
 

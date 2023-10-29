@@ -2,23 +2,42 @@ import {
     EC2Client, 
     CreateVpcCommand, 
     CreateSecurityGroupCommand,
-    CreateSubnetCommand, 
+    CreateSubnetCommand,
+    CreateInternetGatewayCommand,
+    AttachInternetGatewayCommand,
+    AuthorizeSecurityGroupIngressCommand,
+    RunInstancesCommand,
+    _InstanceType,
+    DescribeRouteTablesCommand,
+    CreateRouteCommand,
+    CreateRouteTableCommand,
+    AssociateRouteTableCommand
 } from "@aws-sdk/client-ec2";
 import {
-    Action,
-    ActionTypeEnum,
     CreateListenerCommand,
-    CreateLoadBalancerCommand, CreateLoadBalancerCommandOutput, CreateTargetGroupCommand, ElasticLoadBalancingV2Client, LoadBalancerSchemeEnum, ProtocolEnum, Tag
+    CreateLoadBalancerCommand, 
+    CreateTargetGroupCommand, 
+    ElasticLoadBalancingV2Client, 
+    RegisterTargetsCommand,
 } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { fromEnv } from "@aws-sdk/credential-providers";
 import { ApplicationFailure } from "@temporalio/workflow";
+import { 
+    AssociateInput,
+    CreateRouteInput,
+    GatewayInput, 
+    IngressInput, 
+    InstanceInput, 
+    ListenerInput, 
+    LoadBalancerInput, 
+    RegisterInput, 
+    RouteInput, 
+    SecurityGroupInput, 
+    SubnetInput,
+    TargetGroupInput,
+    VPCInput
+} from "./types";
 
-type VPCInput = {
-    CidrBlock: string;
-    DryRun: boolean
-}
-
-// Create vpc activity
 export async function createVPC(): Promise<string> {
 
     const client = new EC2Client({
@@ -44,14 +63,6 @@ export async function createVPC(): Promise<string> {
     }
 };
 
-type SecurityGroupInput= {
-    Description: string;
-    GroupName: string;
-    VpcId: string;
-    DryRun: boolean
-}   
-
-// Create security group
 export async function createSecurityGroup(name: string, env: string, vpcId: string): Promise<string> {
 
     const client = new EC2Client({
@@ -62,7 +73,6 @@ export async function createSecurityGroup(name: string, env: string, vpcId: stri
         Description: `Security group for ${env}.`,
         GroupName: `${name}-${env}`,
         VpcId: vpcId,
-        DryRun: false
     };
     const command = new CreateSecurityGroupCommand(sgParams);
 
@@ -71,6 +81,29 @@ export async function createSecurityGroup(name: string, env: string, vpcId: stri
         if (!GroupId){
             throw Error('No Security Group Id');
         }
+
+        const inboundParams: IngressInput = {
+            GroupId: GroupId,
+            IpPermissions: [
+                {
+                    FromPort: 80,
+                    IpProtocol: "tcp",
+                    ToPort: 80,
+                    IpRanges: [
+                        {
+                        CidrIp: "172.1.0.0/20"
+                        },
+                        {
+                            CidrIp: "0.0.0.0/0"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        const inboundCommand = new AuthorizeSecurityGroupIngressCommand(inboundParams);
+        await client.send(inboundCommand);
+
         return GroupId;
     } catch (err) {
         const message = `Error creating security group: ${err}`;
@@ -78,12 +111,101 @@ export async function createSecurityGroup(name: string, env: string, vpcId: stri
     }
 };
 
-type SubnetInput = {
-    CidrBlock: string;
-    VpcId: string;
-}
+export async function createGateway(vpcId: string): Promise<string> {
+    const client = new EC2Client({
+        region: 'us-west-2',
+        credentials: fromEnv()
+    });
 
-export async function createSubnet(vpcId: string, cidrBlock: string): Promise<string> {
+    const command = new CreateInternetGatewayCommand({});
+
+    try {
+        const { InternetGateway } = await client.send(command);
+        const gatewayId = InternetGateway?.InternetGatewayId;
+        if (!gatewayId){
+            throw Error('No Gateway Id.');
+        }
+
+        const gatewayParams: GatewayInput = {
+            VpcId: vpcId,
+            InternetGatewayId: gatewayId
+        }
+        const attachCommand = new AttachInternetGatewayCommand(gatewayParams);
+        await client.send(attachCommand);
+        return gatewayId;
+    } catch (err) {
+        const message = `Error creating Internet Gateway: ${err}`;
+        throw ApplicationFailure.create({ message });
+    }
+};
+
+export async function createRouteTable(vpcId: string): Promise<string>{
+    const client = new EC2Client({
+        region: 'us-west-2',
+        credentials: fromEnv()
+    });
+    
+    const routeTableParams: CreateRouteInput = {
+        VpcId: vpcId
+    };
+    const command = new CreateRouteTableCommand(routeTableParams);
+
+    try {
+        const { RouteTable } = await client.send(command);
+        if (RouteTable?.RouteTableId){
+            return RouteTable?.RouteTableId
+        } else {
+            throw Error('No Route Table Id');
+        }
+    } catch (err) {
+        const message = `Error creating route table: ${err}`;
+        throw ApplicationFailure.create({ message });
+    }
+};
+
+export async function addRoute(routeTableId: string, gatewayId: string): Promise<void>{
+    const client = new EC2Client({
+        region: 'us-west-2',
+        credentials: fromEnv()
+    });
+
+    const routeParams: RouteInput = {
+        DestinationCidrBlock: '0.0.0.0/0',
+        GatewayId: gatewayId,
+        RouteTableId: routeTableId
+    };
+
+    const command = new CreateRouteCommand(routeParams);
+
+    try {
+        await client.send(command);
+    } catch (err) {
+        const message = `Error adding route: ${err}`;
+        throw ApplicationFailure.create({ message });
+    }
+};
+
+export async function associateRouteTable(routeTableId: string, subnetId: string): Promise<void>{
+    const client = new EC2Client({
+        region: 'us-west-2',
+        credentials: fromEnv()
+    });
+
+    const associateParams: AssociateInput = {
+        RouteTableId: routeTableId,
+        SubnetId: subnetId
+    };
+    const command = new AssociateRouteTableCommand(associateParams);
+
+    try {
+        await client.send(command);
+    } catch (err) {
+        const message = `Error associating route table to subnet: ${err}`;
+        throw ApplicationFailure.create({ message });
+    }
+};
+
+export async function createSubnet(vpcId: string, cidrBlock: string, az: string, tag: string): Promise<string> {
     const client = new EC2Client({
         region: 'us-west-2',
         credentials: fromEnv()
@@ -91,7 +213,8 @@ export async function createSubnet(vpcId: string, cidrBlock: string): Promise<st
     
     const subnetParams: SubnetInput = {
         CidrBlock: cidrBlock,
-        VpcId: vpcId
+        VpcId: vpcId,
+        AvailabilityZone: az
     };
     const command = new CreateSubnetCommand(subnetParams);
 
@@ -105,13 +228,6 @@ export async function createSubnet(vpcId: string, cidrBlock: string): Promise<st
         const message = `Error creating subnet: ${err}`;
         throw ApplicationFailure.create({ message });
     }
-};
-
-type LoadBalancerInput = {
-    Name: string;
-    Subnets: Array<string>;
-    Scheme: LoadBalancerSchemeEnum;
-    SecurityGroups: Array<string>;
 };
 
 export async function createLoadBalancer(sgGroupId: string, subnetIds: Array<string>): Promise<string> {
@@ -142,13 +258,6 @@ export async function createLoadBalancer(sgGroupId: string, subnetIds: Array<str
     }
 };
 
-type TargetGroupInput = {
-    Name: string;
-    Protocol: ProtocolEnum;
-    Port: number;
-    VpcId: string;
-}
-
 export async function createTargetGroup(vpcId: string): Promise<string> {
     const client = new ElasticLoadBalancingV2Client({
         region: 'us-west-2',
@@ -175,13 +284,6 @@ export async function createTargetGroup(vpcId: string): Promise<string> {
         throw ApplicationFailure.create({ message }); 
     }
 };
-
-type ListenerInput = {
-    LoadBalancerArn: string;
-    Port: number;
-    Protocol: ProtocolEnum;
-    DefaultActions: Array<Action>;
-}
 
 export async function createListener(loadBalancerArn: string, targetGroupArn: string): Promise<void>{
     const client = new ElasticLoadBalancingV2Client({
@@ -211,10 +313,58 @@ export async function createListener(loadBalancerArn: string, targetGroupArn: st
 
 }
 
-// create instance activity
-export async function createInstance(name: string): Promise<string> {
+export async function createInstance(securityGroupId: string, subnetId: string): Promise<string> {
 
-    return `Instance: ${name} created successfully.`
+    const client = new EC2Client({
+        region: 'us-west-2',
+        credentials: fromEnv() 
+    });
+
+    const instanceParams: InstanceInput = {
+        ImageId: 'ami-0c103e518ca8d895d',
+        InstanceType: 't2.micro',
+        SecurityGroupIds: [securityGroupId],
+        SubnetId: subnetId,
+        MaxCount: 1,
+        MinCount: 1,
+        DryRun: false
+    };
+    const command = new RunInstancesCommand(instanceParams);
+    
+    try {
+        const instanceResponse = await client.send(command);
+        if (!instanceResponse.Instances){
+            throw Error('No instances returned.');
+        }
+
+        return instanceResponse.Instances[0].InstanceId ?? ''
+    } catch (err) {
+        const message = `Error creating instance: ${err}`;
+        throw ApplicationFailure.create({ message });
+    }
+};
+
+export async function registerInstance(instanceId: string, targetGroup: string): Promise<void>{
+    const client = new ElasticLoadBalancingV2Client({
+        region: 'us-west-2',
+        credentials: fromEnv()
+    });
+    
+    const registerParams: RegisterInput = {
+        TargetGroupArn: targetGroup,
+        Targets: [{
+            Id: instanceId
+        }]
+    }
+
+    const command = new RegisterTargetsCommand(registerParams);
+
+    try {
+        await client.send(command);
+    } catch (err) {
+        const message = `Error registering target instance: ${err}`;
+        throw ApplicationFailure.create({ message });
+    }
 };
 
 

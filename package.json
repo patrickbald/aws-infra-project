@@ -9,7 +9,7 @@
     "start": "ts-node src/worker.ts",
     "start.watch": "nodemon src/worker.ts",
     "initiate-env": "ts-node src/environment.ts",
-    "add-instance-workflow": "ts-node src/instance.ts"
+    "add-instance": "ts-node src/instance.ts"
   },
   "nodemonConfig": {
     "execMap": {
