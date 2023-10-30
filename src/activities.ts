@@ -8,7 +8,6 @@ import {
     AuthorizeSecurityGroupIngressCommand,
     RunInstancesCommand,
     _InstanceType,
-    DescribeRouteTablesCommand,
     CreateRouteCommand,
     CreateRouteTableCommand,
     AssociateRouteTableCommand
@@ -78,7 +77,7 @@ export async function createSecurityGroup(name: string, env: string, vpcId: stri
 
     try {
         const { GroupId } = await client.send(command);
-        if (!GroupId){
+        if (GroupId == undefined){
             throw Error('No Security Group Id');
         }
 
@@ -152,11 +151,11 @@ export async function createRouteTable(vpcId: string): Promise<string>{
 
     try {
         const { RouteTable } = await client.send(command);
-        if (RouteTable?.RouteTableId){
-            return RouteTable?.RouteTableId
-        } else {
+        if (!RouteTable?.RouteTableId){
             throw Error('No Route Table Id');
         }
+
+        return RouteTable?.RouteTableId;
     } catch (err) {
         const message = `Error creating route table: ${err}`;
         throw ApplicationFailure.create({ message });
@@ -247,10 +246,10 @@ export async function createLoadBalancer(sgGroupId: string, subnetIds: Array<str
 
     try {
         const res = await client.send(command);
-        if (res.LoadBalancers){
-            return res.LoadBalancers[0].LoadBalancerArn ?? ''
+        if (res.LoadBalancers && res.LoadBalancers[0].LoadBalancerArn){
+            return res.LoadBalancers[0].LoadBalancerArn
         } else {
-            throw Error('No Load Balancer in Response');
+            throw ApplicationFailure.create({ message: 'No Load Balancer in Response' });
         }
     } catch (err) {
         const message = `Error creating load balancer: ${err}`
@@ -274,10 +273,10 @@ export async function createTargetGroup(vpcId: string): Promise<string> {
 
     try {
         const targetGroupResponse = await client.send(command);
-        if (targetGroupResponse.TargetGroups){
-            return targetGroupResponse.TargetGroups[0].TargetGroupArn ?? ''
+        if (targetGroupResponse.TargetGroups && targetGroupResponse.TargetGroups[0].TargetGroupArn){
+            return targetGroupResponse.TargetGroups[0].TargetGroupArn
         } else {
-            throw Error('No Target Group in Response.')
+            throw ApplicationFailure.create({ message: 'No Target Group in Response.' })
         }
     } catch (err) {
         const message = `Error creating target group: ${err}`
@@ -334,7 +333,7 @@ export async function createInstance(securityGroupId: string, subnetId: string):
     try {
         const instanceResponse = await client.send(command);
         if (!instanceResponse.Instances){
-            throw Error('No instances returned.');
+            throw ApplicationFailure.create({ message: 'No instances returned.' });
         }
 
         return instanceResponse.Instances[0].InstanceId ?? ''

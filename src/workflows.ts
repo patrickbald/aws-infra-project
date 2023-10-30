@@ -66,10 +66,6 @@ export async function initiateEnvironment(args: EnvArgs): Promise<EnvOutput> {
   const securityGroupId = await createSecurityGroup(args.env, sgName, vpcId);
 
   const loadBalancerArn = await createLoadBalancer(securityGroupId, subnetIds.slice(0, 2));
-  if (loadBalancerArn == ''){
-    const message = 'No Load Balancer Arn';
-    throw ApplicationFailure.create({ message });
-  }
 
   const targetGroupArn = await createTargetGroup(vpcId);
   if (targetGroupArn === ''){
