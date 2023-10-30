@@ -1,6 +1,18 @@
 import { IpPermission, _InstanceType } from "@aws-sdk/client-ec2";
 import { Action, LoadBalancerSchemeEnum, ProtocolEnum, TargetDescription } from "@aws-sdk/client-elastic-load-balancing-v2";
 
+type EnvArgs = {
+    env: string
+  };
+  
+  type EnvOutput = {
+    VpcId: string;
+    LoadBalancerArn: string;
+    SecurityGroup: string;
+    SubnetIds: Array<string>;
+    TargetGroupArn: string;
+  };
+
 type VPCInput = {
     CidrBlock: string;
     DryRun: boolean
@@ -79,6 +91,12 @@ type AssociateInput = {
     SubnetId: string;
 };
 
+type InstanceArgs = {
+    SecurityGroupId: string;
+    SubnetId: string
+    TargetGroupArn: string;
+  };
+
 export {
     VPCInput,
     SecurityGroupInput,
@@ -92,5 +110,8 @@ export {
     RegisterInput,
     RouteInput,
     CreateRouteInput,
-    AssociateInput
+    AssociateInput,
+    EnvArgs, 
+    EnvOutput,
+    InstanceArgs
 };

@@ -1,6 +1,6 @@
-import { ApplicationFailure, proxyActivities, sleep, uuid4 } from "@temporalio/workflow";
+import { ApplicationFailure, proxyActivities, sleep } from "@temporalio/workflow";
 import type * as activities from './activities';
-import { EC2Client } from "@aws-sdk/client-ec2";
+import { EnvArgs, EnvOutput, InstanceArgs } from "./types";
 
 const {
   createVPC,
@@ -19,28 +19,15 @@ const {
   retry: {
     initialInterval: '1 second',
     backoffCoefficient: 2,
-    maximumAttempts: 3,
+    maximumAttempts: 2,
   },
   startToCloseTimeout: '1 minute'
 });
 
-type EnvArgs = {
-  sgName: string;
-  env: string
-}
-
-type EnvOutput = {
-  VpcId: string;
-  LoadBalancerArn: string;
-  SecurityGroup: string;
-  SubnetIds: Array<string>;
-  TargetGroupArn: string;
-}
-
 // Workflow
 export async function initiateEnvironment(args: EnvArgs): Promise<EnvOutput> {
 
-  if (!args.env || !args.sgName){
+  if (!args.env){
     throw ApplicationFailure.create({ message: `VPC workflows missing parameters.`});
   }
 
@@ -101,12 +88,6 @@ export async function initiateEnvironment(args: EnvArgs): Promise<EnvOutput> {
     SubnetIds: subnetIds,
     TargetGroupArn: targetGroupArn
   }
-};
-
-type InstanceArgs = {
-  SecurityGroupId: string;
-  SubnetId: string
-  TargetGroupArn: string;
 };
 
 // Workflow to add an instance to infrastructure
