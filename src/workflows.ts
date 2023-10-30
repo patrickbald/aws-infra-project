@@ -90,13 +90,12 @@ export async function initiateEnvironment(args: EnvArgs): Promise<EnvOutput> {
 export async function addInstance(args: InstanceArgs): Promise<string> {
 
   const instanceId = await createInstance(args.SecurityGroupId, args.SubnetId);
-  console.log(`Instance ID: ${instanceId}`);
 
   await sleep('1 minute');
 
   await registerInstance(instanceId, args.TargetGroupArn);
   
-  return `Instance: successfully created.`;
+  return `Instance successfully created: ${instanceId}`;
 };
 
 

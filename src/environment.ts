@@ -4,10 +4,10 @@ import { initiateEnvironment } from './workflows';
 async function run() {
   const client = new Client();
 
-  const environment = await client.workflow.execute(initiateEnvironment, { // Start vs Execute?
+  const environment = await client.workflow.execute(initiateEnvironment, {
     args: [{ env: 'Dev' }],
     taskQueue: 'aws-infra',
-    workflowId: 'initiate-env-1' // Does this need to be unique?
+    workflowId: 'initiate-env-1'
   });
   console.log(environment);
 };
