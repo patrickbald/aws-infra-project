@@ -309,7 +309,7 @@ export async function createTargetGroup(vpcId: string): Promise<string> {
     });
     
     const targetGroupParams: TargetGroupInput = {
-        Name: 'pb-temporal-target-group',
+        Name: 'temporal-target-group',
         Protocol: 'HTTP',
         Port: 80,
         VpcId: vpcId

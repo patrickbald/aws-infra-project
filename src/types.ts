@@ -101,6 +101,10 @@ type InstanceArgs = {
     TargetGroupArn: string;
   };
 
+type TeardownArgs = {
+    env: string;
+}
+
 type SubnetAZ = {
     Subnet: string;
     Az: string;
@@ -124,5 +128,6 @@ export {
     EnvArgs, 
     EnvOutput,
     InstanceArgs,
-    SubnetAZ
+    SubnetAZ,
+    TeardownArgs
 };

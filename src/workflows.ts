@@ -1,6 +1,13 @@
-import { ApplicationFailure, 
-  proxyActivities, sleep, workflowInfo, log } from "@temporalio/workflow";
-import { EnvArgs, EnvOutput, InstanceArgs, SubnetAZ } from "./types";
+import { 
+  ApplicationFailure, 
+  proxyActivities, 
+  sleep, 
+  workflowInfo, 
+  log, 
+  Trigger,
+  setHandler,
+  defineSignal} from "@temporalio/workflow";
+import { EnvArgs, EnvOutput, InstanceArgs, SubnetAZ, TeardownArgs } from "./types";
 
 import type * as activities from './activities';
 import { CIDRBlocks } from "./config";
@@ -19,9 +26,7 @@ const {
   associateRouteTable
 } = proxyActivities<typeof activities>({
   retry: {
-    initialInterval: '1 second',
-    backoffCoefficient: 2,
-    maximumAttempts: 1,
+    nonRetryableErrorTypes: [], // TODO throw specific errors when aws errors cant be retried
   },
   startToCloseTimeout: '1 minute'
 });
@@ -36,17 +41,16 @@ export async function initiateEnvironmentWorkflow(args: EnvArgs): Promise<EnvOut
   };
 
   const vpcId = await createVPC(args.env);
-  log.debug(`VPC created successfully.`, { vpcid: vpcId });
+  log.info(`VPC created successfully.`, { vpcid: vpcId });
 
   let subnetIds:Array<string> = [];
   // TODO can we do promise.all instead of awaiting each subnet response
   for (let subnet of CIDRBlocks){
     subnetIds.push(await createSubnet(vpcId, subnet.Subnet, subnet.Az, subnet.Tag)); // remove await
   };
+  log.info(`Subnets created successfully`, { subnets: subnetIds });
 
-  log.debug(`Subnets created successfully`, { subnets: subnetIds });
-
-  // promise.all
+  // promise.all here 
 
   const gatewayId = await createGateway(vpcId, args.env);
   const routeTableId = await createRouteTable(vpcId);
@@ -62,10 +66,6 @@ export async function initiateEnvironmentWorkflow(args: EnvArgs): Promise<EnvOut
   const loadBalancerArn = await createLoadBalancer(args.env, securityGroupId, subnetIds.slice(0, 2));
 
   const targetGroupArn = await createTargetGroup(vpcId);
-  if (targetGroupArn === ''){
-    const message = 'No Target Group Arn';
-    throw ApplicationFailure.create({ message });
-  }
 
   await createListener(loadBalancerArn, targetGroupArn);
 
@@ -92,5 +92,31 @@ export async function addInstanceWorkflow(args: InstanceArgs): Promise<string> {
   
   return `Instance successfully created: ${instanceId}`;
 };
+
+
+export const approveTeardownSignal = defineSignal('approveTeardown');
+
+export async function teardownWorkflow(args: TeardownArgs): Promise<string> {
+  
+  const { workflowId } = workflowInfo();
+  log.info(`Teardown workflow Id: ${workflowId}`, {});
+
+  const isApproved = new Trigger<boolean>();
+  setHandler(approveTeardownSignal, () => isApproved.resolve(true));
+  const approvalTime = '1 minute';
+
+  const userApproved = await Promise.race([
+    isApproved,
+    sleep(approvalTime),
+  ]);
+
+  if (!userApproved){
+    throw new ApplicationFailure(`Teardown not approved within ${approvalTime}`);
+  };
+
+  // Go ahead with teardown ...
+
+  return 'Environment teardown successful';
+}
 
 
