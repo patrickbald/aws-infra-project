@@ -10,7 +10,9 @@ import {
     _InstanceType,
     CreateRouteCommand,
     CreateRouteTableCommand,
-    AssociateRouteTableCommand
+    AssociateRouteTableCommand,
+    Tag,
+    ResourceType
 } from "@aws-sdk/client-ec2";
 import {
     CreateListenerCommand,
@@ -21,6 +23,7 @@ import {
 } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { fromEnv } from "@aws-sdk/credential-providers";
 import { ApplicationFailure } from "@temporalio/workflow";
+import * as activity from '@temporalio/activity';
 import { 
     AssociateInput,
     CreateRouteInput,
@@ -37,7 +40,7 @@ import {
     VPCInput
 } from "./types";
 
-export async function createVPC(): Promise<string> {
+export async function createVPC(env: string): Promise<string> {
 
     const client = new EC2Client({
         region: 'us-west-2',
@@ -46,7 +49,18 @@ export async function createVPC(): Promise<string> {
 
     const vpcParams: VPCInput = {
         CidrBlock: '172.1.0.0/16',
-        DryRun: false
+        DryRun: false,
+        TagSpecifications: [
+            {
+                ResourceType: 'vpc',
+                Tags: [
+                    {
+                        Key: 'Name',
+                        Value: `Temporal-${env}`
+                    }
+                ]
+            }
+        ]
     };
     const command = new CreateVpcCommand(vpcParams);
 
@@ -62,7 +76,7 @@ export async function createVPC(): Promise<string> {
     }
 };
 
-export async function createSecurityGroup(name: string, env: string, vpcId: string): Promise<string> {
+export async function createSecurityGroup(env: string, vpcId: string): Promise<string> {
 
     const client = new EC2Client({
         region: 'us-west-2',
@@ -70,7 +84,7 @@ export async function createSecurityGroup(name: string, env: string, vpcId: stri
     });
     const sgParams: SecurityGroupInput = {
         Description: `Security group for ${env}.`,
-        GroupName: `${name}-${env}`,
+        GroupName: `temporal-sg-${env}`,
         VpcId: vpcId,
     };
     const command = new CreateSecurityGroupCommand(sgParams);
@@ -79,7 +93,7 @@ export async function createSecurityGroup(name: string, env: string, vpcId: stri
         const { GroupId } = await client.send(command);
         if (GroupId == undefined){
             throw Error('No Security Group Id');
-        }
+        };
 
         const inboundParams: IngressInput = {
             GroupId: GroupId,
@@ -110,7 +124,7 @@ export async function createSecurityGroup(name: string, env: string, vpcId: stri
     }
 };
 
-export async function createGateway(vpcId: string): Promise<string> {
+export async function createGateway(vpcId: string, env: string): Promise<string> {
     const client = new EC2Client({
         region: 'us-west-2',
         credentials: fromEnv()
@@ -127,7 +141,18 @@ export async function createGateway(vpcId: string): Promise<string> {
 
         const gatewayParams: GatewayInput = {
             VpcId: vpcId,
-            InternetGatewayId: gatewayId
+            InternetGatewayId: gatewayId,
+            TagSpecifications: [
+                {
+                    ResourceType: 'internet-gateway',
+                    Tags: [
+                        {
+                            Key: 'Name',
+                            Value: `temporal-ig-${env}`
+                        }
+                    ]
+                }
+            ]
         }
         const attachCommand = new AttachInternetGatewayCommand(gatewayParams);
         await client.send(attachCommand);
@@ -145,7 +170,16 @@ export async function createRouteTable(vpcId: string): Promise<string>{
     });
     
     const routeTableParams: CreateRouteInput = {
-        VpcId: vpcId
+        VpcId: vpcId,
+        TagSpecifications: [{
+            ResourceType: 'route-table',
+            Tags: [
+                {
+                    Key: 'Name',
+                    Value: 'temporal-route-table'
+                }
+            ]
+        }]
     };
     const command = new CreateRouteTableCommand(routeTableParams);
 
@@ -204,7 +238,7 @@ export async function associateRouteTable(routeTableId: string, subnetId: string
     }
 };
 
-export async function createSubnet(vpcId: string, cidrBlock: string, az: string, tag: string): Promise<string> {
+export async function createSubnet(vpcId: string, cidrBlock: string, az: string, tagValue: string): Promise<string> {
     const client = new EC2Client({
         region: 'us-west-2',
         credentials: fromEnv()
@@ -213,7 +247,18 @@ export async function createSubnet(vpcId: string, cidrBlock: string, az: string,
     const subnetParams: SubnetInput = {
         CidrBlock: cidrBlock,
         VpcId: vpcId,
-        AvailabilityZone: az
+        AvailabilityZone: az,
+        TagSpecifications: [
+            {
+                ResourceType: 'subnet',
+                Tags: [
+                    {
+                        Key: 'Name',
+                        Value: tagValue
+                    }
+                ]
+            }
+        ]
     };
     const command = new CreateSubnetCommand(subnetParams);
 
@@ -229,7 +274,7 @@ export async function createSubnet(vpcId: string, cidrBlock: string, az: string,
     }
 };
 
-export async function createLoadBalancer(sgGroupId: string, subnetIds: Array<string>): Promise<string> {
+export async function createLoadBalancer(env: string, sgGroupId: string, subnetIds: Array<string>): Promise<string> {
 
     const client = new ElasticLoadBalancingV2Client({
         region: 'us-west-2',
@@ -237,7 +282,7 @@ export async function createLoadBalancer(sgGroupId: string, subnetIds: Array<str
     });
 
     const lbParams: LoadBalancerInput = {
-        Name: 'PB-Load-Balancer',
+        Name: `Temporal-Load-Balancer-${env}`,
         Subnets: subnetIds,
         Scheme: 'internet-facing',
         SecurityGroups: [sgGroupId],

@@ -1,4 +1,4 @@
-import { IpPermission, _InstanceType } from "@aws-sdk/client-ec2";
+import { IpPermission, Tag, TagSpecification, _InstanceType } from "@aws-sdk/client-ec2";
 import { Action, LoadBalancerSchemeEnum, ProtocolEnum, TargetDescription } from "@aws-sdk/client-elastic-load-balancing-v2";
 
 type EnvArgs = {
@@ -15,7 +15,8 @@ type EnvArgs = {
 
 type VPCInput = {
     CidrBlock: string;
-    DryRun: boolean
+    DryRun: boolean;
+    TagSpecifications: Array<TagSpecification>;
 }
 
 type SecurityGroupInput = {
@@ -32,12 +33,14 @@ type IngressInput = {
 type GatewayInput = {
     VpcId: string;
     InternetGatewayId: string;
+    TagSpecifications: Array<TagSpecification>;
 };
 
 type SubnetInput = {
     CidrBlock: string;
     VpcId: string;
     AvailabilityZone: string;
+    TagSpecifications: Array<TagSpecification>;
 };
 
 type LoadBalancerInput = {
@@ -84,6 +87,7 @@ type RouteInput = {
 
 type CreateRouteInput = {
     VpcId: string;
+    TagSpecifications: Array<TagSpecification>;
 };
 
 type AssociateInput = {
@@ -96,6 +100,12 @@ type InstanceArgs = {
     SubnetId: string
     TargetGroupArn: string;
   };
+
+type SubnetAZ = {
+    Subnet: string;
+    Az: string;
+    Tag: string;
+};
 
 export {
     VPCInput,
@@ -113,5 +123,6 @@ export {
     AssociateInput,
     EnvArgs, 
     EnvOutput,
-    InstanceArgs
+    InstanceArgs,
+    SubnetAZ
 };

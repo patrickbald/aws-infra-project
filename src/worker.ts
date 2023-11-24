@@ -10,7 +10,7 @@ async function run() {
     workflowsPath: require.resolve('./workflows'),
     activities,
     connection,
-    taskQueue: 'aws-infra',
+    taskQueue: 'aws-infra', // TODO import from config ??
   });
 
   await worker.run();

@@ -1,7 +1,9 @@
-import { ApplicationFailure, proxyActivities, sleep } from "@temporalio/workflow";
-import type * as activities from './activities';
-import { EnvArgs, EnvOutput, InstanceArgs } from "./types";
+import { ApplicationFailure, 
+  proxyActivities, sleep, workflowInfo, log } from "@temporalio/workflow";
+import { EnvArgs, EnvOutput, InstanceArgs, SubnetAZ } from "./types";
 
+import type * as activities from './activities';
+import { CIDRBlocks } from "./config";
 const {
   createVPC,
   createSecurityGroup,
@@ -19,63 +21,55 @@ const {
   retry: {
     initialInterval: '1 second',
     backoffCoefficient: 2,
-    maximumAttempts: 2,
+    maximumAttempts: 1,
   },
   startToCloseTimeout: '1 minute'
 });
 
 // Workflow
-export async function initiateEnvironment(args: EnvArgs): Promise<EnvOutput> {
+export async function initiateEnvironmentWorkflow(args: EnvArgs): Promise<EnvOutput> {
+
+  log.info(`Initiate Environment invoked`, { env: args.env });
 
   if (!args.env){
     throw ApplicationFailure.create({ message: `VPC workflows missing parameters.`});
-  }
-
-  // Business Logic
-  console.log(`Initiating environment: ${args.env}`)
-
-  const vpcId = await createVPC();
-
-  type SubnetAZ = {
-      Subnet: string;
-      Az: string;
-      Tag: string;
   };
 
-  const cidrBlocks:Array<SubnetAZ> = [
-    {Subnet: '172.1.0.0/20', Az: 'us-west-2a', Tag: 'us-west-2a-public'}, 
-    {Subnet: '172.1.16.0/20', Az: 'us-west-2b', Tag: 'us-west-2b-public'}, 
-    {Subnet: '172.1.128.0/20', Az: 'us-west-2a', Tag: 'us-west-2a-private'},
-    {Subnet: '172.1.144.0/20', Az: 'us-west-2b', Tag: 'us-west-2b-private'}
-  ];
+  const vpcId = await createVPC(args.env);
+  log.debug(`VPC created successfully.`, { vpcid: vpcId });
+
   let subnetIds:Array<string> = [];
-  for (let subnet of cidrBlocks){
-    subnetIds.push(await createSubnet(vpcId, subnet.Subnet, subnet.Az, subnet.Tag));
-  }
+  // TODO can we do promise.all instead of awaiting each subnet response
+  for (let subnet of CIDRBlocks){
+    subnetIds.push(await createSubnet(vpcId, subnet.Subnet, subnet.Az, subnet.Tag)); // remove await
+  };
 
-  const gatewayId = await createGateway(vpcId);
+  log.debug(`Subnets created successfully`, { subnets: subnetIds });
 
+  // promise.all
+
+  const gatewayId = await createGateway(vpcId, args.env);
   const routeTableId = await createRouteTable(vpcId);
   await addRoute(routeTableId, gatewayId);
 
-  for (let subnet of subnetIds){
-    await associateRouteTable(routeTableId, subnet);
+  // TODO can we do this with promise.all instead of awaiting each one
+  for (let subnet of subnetIds.slice(0,2)){
+      await associateRouteTable(routeTableId, subnet);
   }
 
-  const sgName = `pb-temporal-1`;
-  const securityGroupId = await createSecurityGroup(args.env, sgName, vpcId);
+  const securityGroupId = await createSecurityGroup(args.env, vpcId);
 
-  const loadBalancerArn = await createLoadBalancer(securityGroupId, subnetIds.slice(0, 2));
+  const loadBalancerArn = await createLoadBalancer(args.env, securityGroupId, subnetIds.slice(0, 2));
 
   const targetGroupArn = await createTargetGroup(vpcId);
   if (targetGroupArn === ''){
     const message = 'No Target Group Arn';
-    throw ApplicationFailure.create({ message })
+    throw ApplicationFailure.create({ message });
   }
 
   await createListener(loadBalancerArn, targetGroupArn);
 
-  console.log('Environment setup complete.')
+  log.info('Environment setup complete.', { });
 
   return {
     VpcId: vpcId,
@@ -87,10 +81,11 @@ export async function initiateEnvironment(args: EnvArgs): Promise<EnvOutput> {
 };
 
 // Workflow to add an instance to infrastructure
-export async function addInstance(args: InstanceArgs): Promise<string> {
+export async function addInstanceWorkflow(args: InstanceArgs): Promise<string> {
 
   const instanceId = await createInstance(args.SecurityGroupId, args.SubnetId);
 
+  // TODO instead of sleeping, poll for instance creation 
   await sleep('1 minute');
 
   await registerInstance(instanceId, args.TargetGroupArn);
