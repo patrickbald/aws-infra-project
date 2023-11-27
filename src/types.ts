@@ -102,8 +102,12 @@ type InstanceArgs = {
   };
 
 type TeardownArgs = {
-    env: string;
-}
+    instanceId: string;
+};
+
+type DescribeInput = {
+    InstanceIds: Array<string>;
+};
 
 type SubnetAZ = {
     Subnet: string;
@@ -129,5 +133,6 @@ export {
     EnvOutput,
     InstanceArgs,
     SubnetAZ,
-    TeardownArgs
+    TeardownArgs,
+    DescribeInput
 };

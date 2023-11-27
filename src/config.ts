@@ -1,10 +1,18 @@
 import { SubnetAZ } from "./types";
 
+export interface ConfigObj {
+  namespace: string
+}
+
+export function getConfig(): ConfigObj {
+  return {
+    namespace: 'temporal-infra'
+  }
+}
+
 export const ENVIRONMENT_TASK_QUEUE = 'aws-infra';
 export const INSTANCE_TASK_QUEUE = ENVIRONMENT_TASK_QUEUE;
 export const TEARDOWN_TASK_QUEUE = ENVIRONMENT_TASK_QUEUE;
-
-// QUESTION - can one worker listen to multiple task queues?
 
 export const CIDRBlocks:Array<SubnetAZ> = [
     {Subnet: '172.1.0.0/20', Az: 'us-west-2a', Tag: 'us-west-2a-public'}, 

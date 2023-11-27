@@ -3,10 +3,10 @@ import { teardownWorkflow } from './workflows';
 import { TEARDOWN_TASK_QUEUE } from './config';
 
 async function teardown() {
-  const client = new Client(); // Temporal Client
+  const client = new Client();
 
   await client.workflow.start(teardownWorkflow, {
-    args: [{ env: 'Dev' }],
+    args: [{ instanceId: '' }],
     taskQueue: TEARDOWN_TASK_QUEUE,
     workflowId: 'teardown-env',
     workflowExecutionTimeout: '1 hour'

@@ -7,8 +7,7 @@ import {
   Trigger,
   setHandler,
   defineSignal} from "@temporalio/workflow";
-import { EnvArgs, EnvOutput, InstanceArgs, SubnetAZ, TeardownArgs } from "./types";
-
+import { EnvArgs, EnvOutput, InstanceArgs, TeardownArgs } from "./types";
 import type * as activities from './activities';
 import { CIDRBlocks } from "./config";
 const {
@@ -23,10 +22,12 @@ const {
   registerInstance,
   createRouteTable,
   addRoute,
-  associateRouteTable
+  associateRouteTable,
+  getInstanceState,
+  deleteInstance
 } = proxyActivities<typeof activities>({
   retry: {
-    nonRetryableErrorTypes: [], // TODO throw specific errors when aws errors cant be retried
+    nonRetryableErrorTypes: [], // TODO throw specific errors when aws errors cant be retried due to already created resources
   },
   startToCloseTimeout: '1 minute'
 });
@@ -84,15 +85,19 @@ export async function initiateEnvironmentWorkflow(args: EnvArgs): Promise<EnvOut
 export async function addInstanceWorkflow(args: InstanceArgs): Promise<string> {
 
   const instanceId = await createInstance(args.SecurityGroupId, args.SubnetId);
+  let created = false;
 
-  // TODO instead of sleeping, poll for instance creation 
-  await sleep('1 minute');
+  while (!created){
+    await sleep('10 seconds');
+    created = await getInstanceState(instanceId);
+  };
 
   await registerInstance(instanceId, args.TargetGroupArn);
   
   return `Instance successfully created: ${instanceId}`;
 };
 
+// New additions: teardown workflow with signal from approve script
 
 export const approveTeardownSignal = defineSignal('approveTeardown');
 
@@ -115,6 +120,7 @@ export async function teardownWorkflow(args: TeardownArgs): Promise<string> {
   };
 
   // Go ahead with teardown ...
+  await deleteInstance(args.instanceId);
 
   return 'Environment teardown successful';
 }

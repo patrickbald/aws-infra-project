@@ -11,8 +11,8 @@ import {
     CreateRouteCommand,
     CreateRouteTableCommand,
     AssociateRouteTableCommand,
-    Tag,
-    ResourceType
+    DescribeInstancesCommand,
+    TerminateInstancesCommand
 } from "@aws-sdk/client-ec2";
 import {
     CreateListenerCommand,
@@ -23,10 +23,10 @@ import {
 } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { fromEnv } from "@aws-sdk/credential-providers";
 import { ApplicationFailure } from "@temporalio/workflow";
-import * as activity from '@temporalio/activity';
 import { 
     AssociateInput,
     CreateRouteInput,
+    DescribeInput,
     GatewayInput, 
     IngressInput, 
     InstanceInput, 
@@ -411,4 +411,55 @@ export async function registerInstance(instanceId: string, targetGroup: string):
     }
 };
 
+export async function getInstanceState(instanceId: string): Promise<boolean>{
+    const client = new EC2Client({
+        region: 'us-west-2',
+        credentials: fromEnv() 
+    }); 
+    const describeParams: DescribeInput = {
+        InstanceIds: [
+          instanceId
+        ]
+      };
+    
+    const command = new DescribeInstancesCommand(describeParams);
+
+    try {
+        const res = await client.send(command);
+
+        if (!res.Reservations){
+            throw ApplicationFailure.create({ message: 'No Instance Reservations' });
+        }
+        if (!res.Reservations[0].Instances){
+            throw ApplicationFailure.create({ message: 'No instances returned in Reservation' })
+        }
+
+        return res.Reservations[0].Instances[0].State?.Name == 'running';
+    } catch (err) {
+        throw ApplicationFailure.create({ message: 'Failure describing instance' });
+    }
+};
+
+export async function deleteInstance(instanceId: string): Promise<boolean>{
+
+    const client = new EC2Client({
+        region: 'us-west-2',
+        credentials: fromEnv()
+    });
+
+    const command = new TerminateInstancesCommand({
+        InstanceIds: [
+            instanceId
+        ]
+    });
+
+    try {
+        await client.send(command);
+    } catch (err) {
+        const message = `Error deleting ec2 instance ${instanceId}: ${err}`;
+        throw Error(message);
+    }
+
+    return true;
+};
 
