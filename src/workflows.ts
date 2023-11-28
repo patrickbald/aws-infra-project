@@ -27,12 +27,12 @@ const {
   deleteInstance
 } = proxyActivities<typeof activities>({
   retry: {
-    nonRetryableErrorTypes: [], // TODO throw specific errors when aws errors cant be retried due to already created resources
+    maximumAttempts: 1,
   },
   startToCloseTimeout: '1 minute'
 });
 
-// Workflow
+// Workflow to create VPC and networking infrastructure
 export async function initiateEnvironmentWorkflow(args: EnvArgs): Promise<EnvOutput> {
 
   log.info(`Initiate Environment invoked`, { env: args.env });
@@ -42,29 +42,32 @@ export async function initiateEnvironmentWorkflow(args: EnvArgs): Promise<EnvOut
   };
 
   const vpcId = await createVPC(args.env);
-  log.info(`VPC created successfully.`, { vpcid: vpcId });
 
-  let subnetIds:Array<string> = [];
-  // TODO can we do promise.all instead of awaiting each subnet response
+  let subnetPromises:Array<Promise<string>> = [];
   for (let subnet of CIDRBlocks){
-    subnetIds.push(await createSubnet(vpcId, subnet.Subnet, subnet.Az, subnet.Tag)); // remove await
+    subnetPromises.push(createSubnet(vpcId, subnet.Subnet, subnet.Az, subnet.Tag));
   };
-  log.info(`Subnets created successfully`, { subnets: subnetIds });
-
-  // promise.all here 
+  const subnets = await Promise.all(subnetPromises).catch((err) => {
+    throw ApplicationFailure.create({ message: `Failed creating subnets: ${err}`});
+  });
 
   const gatewayId = await createGateway(vpcId, args.env);
+
   const routeTableId = await createRouteTable(vpcId);
+
   await addRoute(routeTableId, gatewayId);
 
-  // TODO can we do this with promise.all instead of awaiting each one
-  for (let subnet of subnetIds.slice(0,2)){
-      await associateRouteTable(routeTableId, subnet);
+  let associateSubnetPromises: Array<Promise<void>> = [];
+  for (let subnet of subnets.slice(0,2)){
+      associateSubnetPromises.push(associateRouteTable(routeTableId, subnet));
   }
+  await Promise.all(associateSubnetPromises).catch((err) => {
+    throw ApplicationFailure.create({ message: `Failure associating subnets with route table: ${err}`});
+  })
 
   const securityGroupId = await createSecurityGroup(args.env, vpcId);
 
-  const loadBalancerArn = await createLoadBalancer(args.env, securityGroupId, subnetIds.slice(0, 2));
+  const loadBalancerArn = await createLoadBalancer(args.env, securityGroupId, subnets.slice(0,2));
 
   const targetGroupArn = await createTargetGroup(vpcId);
 
@@ -76,7 +79,7 @@ export async function initiateEnvironmentWorkflow(args: EnvArgs): Promise<EnvOut
     VpcId: vpcId,
     LoadBalancerArn: loadBalancerArn,
     SecurityGroup: securityGroupId,
-    SubnetIds: subnetIds,
+    SubnetIds: subnets,
     TargetGroupArn: targetGroupArn
   }
 };
@@ -123,6 +126,6 @@ export async function teardownWorkflow(args: TeardownArgs): Promise<string> {
   await deleteInstance(args.instanceId);
 
   return 'Environment teardown successful';
-}
+};
 
 

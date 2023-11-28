@@ -6,7 +6,7 @@ async function run(){
     const client = new Client();
 
     const instanceResult = await client.workflow.execute(addInstanceWorkflow, {
-        args: [{ SecurityGroupId: 'sg-082633366fd1c72ce', SubnetId: 'subnet-09d566dd93a10033b', TargetGroupArn: 'arn:aws:elasticloadbalancing:us-west-2:506214396992:targetgroup/pb-temporal-target-group/e0c7266698ee5e13' }],
+        args: [{ SecurityGroupId: 'sg-0d4865f60d66c00e0', SubnetId: 'subnet-07dd8c707fb48c30d', TargetGroupArn: 'arn:aws:elasticloadbalancing:us-west-2:506214396992:targetgroup/temporal-target-group/4b3cd7812e6c6145' }],
         taskQueue: INSTANCE_TASK_QUEUE,
         workflowId: 'add-instance'
     });

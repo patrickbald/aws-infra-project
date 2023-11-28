@@ -6,7 +6,7 @@ export interface ConfigObj {
 
 export function getConfig(): ConfigObj {
   return {
-    namespace: 'temporal-infra'
+    namespace: 'default'
   }
 }
 
